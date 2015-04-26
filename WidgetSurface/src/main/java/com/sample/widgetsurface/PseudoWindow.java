@@ -98,7 +98,10 @@ public class PseudoWindow extends Window {
     public void setTitle(CharSequence charSequence) {
 
     }
-
+public void setNavigationBarColor(int c) {}
+public int getNavigationBarColor(){return 0;}
+public void setStatusBarColor(int c) {}
+public int getStatusBarColor(){return 0;}
     @Override
     public void setTitleColor(int i) {
 
