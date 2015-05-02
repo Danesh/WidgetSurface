@@ -1,0 +1,208 @@
+diff --git a/core/java/android/view/ViewRootImpl.java b/core/java/android/view/ViewRootImpl.java
+index f685e15..c97c17b 100644
+--- a/core/java/android/view/ViewRootImpl.java
++++ b/core/java/android/view/ViewRootImpl.java
+@@ -441,6 +441,203 @@ public final class ViewRootImpl implements ViewParent,
+     /**
+      * We have one child
+      */
++    public void setViewer(View view, WindowManager.LayoutParams attrs) {
++        synchronized (this) {
++            if (mView == null) {
++                mView = view;
++
++                mAttachInfo.mDisplayState = mDisplay.getState();
++                mDisplayManager.registerDisplayListener(mDisplayListener, mHandler);
++
++                mViewLayoutDirectionInitial = mView.getRawLayoutDirection();
++                mFallbackEventHandler.setView(view);
++                mWindowAttributes.copyFrom(attrs);
++                if (mWindowAttributes.packageName == null) {
++                    mWindowAttributes.packageName = mBasePackageName;
++                }
++                attrs = mWindowAttributes;
++                // Keep track of the actual window flags supplied by the client.
++                mClientWindowLayoutFlags = attrs.flags;
++
++                setAccessibilityFocus(null, null);
++
++                if (view instanceof RootViewSurfaceTaker) {
++                    mSurfaceHolderCallback =
++                            ((RootViewSurfaceTaker)view).willYouTakeTheSurface();
++                    if (mSurfaceHolderCallback != null) {
++                        mSurfaceHolder = new TakenSurfaceHolder();
++                        mSurfaceHolder.setFormat(PixelFormat.UNKNOWN);
++                    }
++                }
++
++                // Compute surface insets required to draw at specified Z value.
++                // TODO: Use real shadow insets for a constant max Z.
++                final int surfaceInset = (int) Math.ceil(view.getZ() * 2);
++                attrs.surfaceInsets.set(surfaceInset, surfaceInset, surfaceInset, surfaceInset);
++
++                CompatibilityInfo compatibilityInfo = mDisplayAdjustments.getCompatibilityInfo();
++                mTranslator = compatibilityInfo.getTranslator();
++
++                // If the application owns the surface, don't enable hardware acceleration
++                if (mSurfaceHolder == null) {
++                    enableHardwareAcceleration(attrs);
++                }
++
++                boolean restore = false;
++                if (mTranslator != null) {
++                    mSurface.setCompatibilityTranslator(mTranslator);
++                    restore = true;
++                    attrs.backup();
++                    mTranslator.translateWindowLayout(attrs);
++                }
++                if (DEBUG_LAYOUT) Log.d(TAG, "WindowLayout in setView:" + attrs);
++
++                if (!compatibilityInfo.supportsScreen()) {
++                    attrs.privateFlags |= WindowManager.LayoutParams.PRIVATE_FLAG_COMPATIBLE_WINDOW;
++                    mLastInCompatMode = true;
++                }
++
++                mSoftInputMode = attrs.softInputMode;
++                mWindowAttributesChanged = true;
++                mWindowAttributesChangesFlag = WindowManager.LayoutParams.EVERYTHING_CHANGED;
++                mAttachInfo.mRootView = view;
++                mAttachInfo.mScalingRequired = mTranslator != null;
++                mAttachInfo.mApplicationScale =
++                        mTranslator == null ? 1.0f : mTranslator.applicationScale;
++                mAdded = true;
++                int res; /* = WindowManagerImpl.ADD_OKAY; */
++
++                // Schedule the first layout -before- adding to the window
++                // manager, to make sure we do the relayout before receiving
++                // any other events from the system.
++                requestLayout();
++                if ((mWindowAttributes.inputFeatures
++                        & WindowManager.LayoutParams.INPUT_FEATURE_NO_INPUT_CHANNEL) == 0) {
++                    mInputChannel = new InputChannel();
++                }
++                //try {
++                    mOrigWindowType = mWindowAttributes.type;
++                    mAttachInfo.mRecomputeGlobalAttributes = true;
++                    collectViewAttributes();
++                    //res = mWindowSession.addToDisplay(mWindow, mSeq, mWindowAttributes,
++                            //getHostVisibility(), mDisplay.getDisplayId(),
++                            //mAttachInfo.mContentInsets, mInputChannel);
++//                } catch (RemoteException e) {
++//                    mAdded = false;
++//                    mView = null;
++//                    mAttachInfo.mRootView = null;
++//                    mInputChannel = null;
++//                    mFallbackEventHandler.setView(null);
++//                    unscheduleTraversals();
++//                    setAccessibilityFocus(null, null);
++//                    throw new RuntimeException("Adding window failed", e);
++//                } finally {
++//                    if (restore) {
++//                        attrs.restore();
++//                    }
++//                }
++                
++                if (mTranslator != null) {
++                    mTranslator.translateRectInScreenToAppWindow(mAttachInfo.mContentInsets);
++                }
++                mPendingOverscanInsets.set(0, 0, 0, 0);
++                mPendingContentInsets.set(mAttachInfo.mContentInsets);
++                mPendingStableInsets.set(mAttachInfo.mStableInsets);
++                mPendingVisibleInsets.set(0, 0, 0, 0);
++                if (DEBUG_LAYOUT) Log.v(TAG, "Added window " + mWindow);
++//                if (res < WindowManagerGlobal.ADD_OKAY) {
++//                    mAttachInfo.mRootView = null;
++//                    mAdded = false;
++//                    mFallbackEventHandler.setView(null);
++//                    unscheduleTraversals();
++//                    setAccessibilityFocus(null, null);
++//                    switch (res) {
++//                        case WindowManagerGlobal.ADD_BAD_APP_TOKEN:
++//                        case WindowManagerGlobal.ADD_BAD_SUBWINDOW_TOKEN:
++//                            throw new WindowManager.BadTokenException(
++//                                "Unable to add window -- token " + attrs.token
++//                                + " is not valid; is your activity running?");
++//                        case WindowManagerGlobal.ADD_NOT_APP_TOKEN:
++//                            throw new WindowManager.BadTokenException(
++//                                "Unable to add window -- token " + attrs.token
++//                                + " is not for an application");
++//                        case WindowManagerGlobal.ADD_APP_EXITING:
++//                            throw new WindowManager.BadTokenException(
++//                                "Unable to add window -- app for token " + attrs.token
++//                                + " is exiting");
++//                        case WindowManagerGlobal.ADD_DUPLICATE_ADD:
++//                            throw new WindowManager.BadTokenException(
++//                                "Unable to add window -- window " + mWindow
++//                                + " has already been added");
++//                        case WindowManagerGlobal.ADD_STARTING_NOT_NEEDED:
++//                            // Silently ignore -- we would have just removed it
++//                            // right away, anyway.
++//                            return;
++//                        case WindowManagerGlobal.ADD_MULTIPLE_SINGLETON:
++//                            throw new WindowManager.BadTokenException(
++//                                "Unable to add window " + mWindow +
++//                                " -- another window of this type already exists");
++//                        case WindowManagerGlobal.ADD_PERMISSION_DENIED:
++//                            throw new WindowManager.BadTokenException(
++//                                "Unable to add window " + mWindow +
++//                                " -- permission denied for this window type");
++//                        case WindowManagerGlobal.ADD_INVALID_DISPLAY:
++//                            throw new WindowManager.InvalidDisplayException(
++//                                "Unable to add window " + mWindow +
++//                                " -- the specified display can not be found");
++//                    }
++//                    throw new RuntimeException(
++//                        "Unable to add window -- unknown error code " + res);
++//                }
++
++                if (view instanceof RootViewSurfaceTaker) {
++                    mInputQueueCallback =
++                        ((RootViewSurfaceTaker)view).willYouTakeTheInputQueue();
++                }
++//                if (mInputChannel != null) {
++//                    if (mInputQueueCallback != null) {
++//                        mInputQueue = new InputQueue();
++//                        mInputQueueCallback.onInputQueueCreated(mInputQueue);
++//                    }
++//                    mInputEventReceiver = new WindowInputEventReceiver(mInputChannel,
++//                            Looper.myLooper());
++//                }
++
++                view.assignParent(this);
++                //mAddedTouchMode = (res & WindowManagerGlobal.ADD_FLAG_IN_TOUCH_MODE) != 0;
++                //mAppVisible = (res & WindowManagerGlobal.ADD_FLAG_APP_VISIBLE) != 0;
++
++                if (mAccessibilityManager.isEnabled()) {
++                    mAccessibilityInteractionConnectionManager.ensureConnection();
++                }
++
++                if (view.getImportantForAccessibility() == View.IMPORTANT_FOR_ACCESSIBILITY_AUTO) {
++                    view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
++                }
++
++                // Set up the input pipeline.
++                CharSequence counterSuffix = attrs.getTitle();
++                mSyntheticInputStage = new SyntheticInputStage();
++                InputStage viewPostImeStage = new ViewPostImeInputStage(mSyntheticInputStage);
++                InputStage nativePostImeStage = new NativePostImeInputStage(viewPostImeStage,
++                        "aq:native-post-ime:" + counterSuffix);
++                InputStage earlyPostImeStage = new EarlyPostImeInputStage(nativePostImeStage);
++                InputStage imeStage = new ImeInputStage(earlyPostImeStage,
++                        "aq:ime:" + counterSuffix);
++                InputStage viewPreImeStage = new ViewPreImeInputStage(imeStage);
++                InputStage nativePreImeStage = new NativePreImeInputStage(viewPreImeStage,
++                        "aq:native-pre-ime:" + counterSuffix);
++
++                mFirstInputStage = nativePreImeStage;
++                mFirstPostImeInputStage = earlyPostImeStage;
++                mPendingInputEventQueueLengthCounterName = "aq:pending:" + counterSuffix;
++            }
++        }
++    }
++
++    /**
++     * We have one child
++     */
+     public void setView(View view, WindowManager.LayoutParams attrs, View panelParentView) {
+         synchronized (this) {
+             if (mView == null) {
